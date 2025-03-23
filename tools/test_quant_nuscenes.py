@@ -239,9 +239,11 @@ def infer(model, demo_dataset):
         for idx, data_dict in enumerate(demo_dataset):
             # logger.info(f"Visualized sample index: \t{idx + 1}")
             print("idx=", idx)
-            data_dict = demo_dataset.collate_batch([data_dict])
+            # data_dict = demo_dataset.collate_batch([data_dict])
             load_data_to_gpu(data_dict)
             pred_dicts, _ = model.forward(data_dict)
+            if idx > 10:
+                break
 
 
 def main():
@@ -400,7 +402,7 @@ def main():
         calibrate(
             model,
             config["algorithm"],
-            forward_loop=infer(model, demo_dataset),
+            forward_loop=infer(model, test_loader),
         )
         mtq.print_quant_summary(model)
 
