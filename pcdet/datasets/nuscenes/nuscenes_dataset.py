@@ -307,6 +307,38 @@ class NuScenesDataset(DatasetTemplate):
             metrics = json.load(f)
 
         result_str, result_dict = nuscenes_utils.format_nuscene_results(metrics, self.class_names, version=eval_version)
+
+        result_str += "---------metrics_summary---------\n"
+        # Print high-level metrics.
+        result_str += 'mAP: %.4f' % (metrics_summary['mean_ap'])
+        # print('mAP: %.4f' % (metrics_summary['mean_ap']))
+        err_name_mapping = {
+            'trans_err': 'mATE',
+            'scale_err': 'mASE',
+            'orient_err': 'mAOE',
+            'vel_err': 'mAVE',
+            'attr_err': 'mAAE'
+        }
+        for tp_name, tp_val in metrics_summary['tp_errors'].items():
+            result_str += '%s: %.4f \n' % (err_name_mapping[tp_name], tp_val)
+
+        result_str += 'NDS: %.4f \n' % (metrics_summary['nd_score'])
+
+        # Print per-class metrics.
+        result_str += "\n"
+        result_str += "Per-class results:\n"
+        result_str += "Object Class\tAP\tATE\tASE\tAOE\tAVE\tAAE\n"
+        class_aps = metrics_summary['mean_dist_aps']
+        class_tps = metrics_summary['label_tp_errors']
+        for class_name in class_aps.keys():
+            result_str += "%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f \n" % (
+                class_name, class_aps[class_name],
+                class_tps[class_name]['trans_err'],
+                class_tps[class_name]['scale_err'],
+                class_tps[class_name]['orient_err'],
+                class_tps[class_name]['vel_err'],
+                class_tps[class_name]['attr_err'])
+
         return result_str, result_dict
 
     def create_groundtruth_database(self, used_classes=None, max_sweeps=10):
