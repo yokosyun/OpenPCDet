@@ -743,6 +743,17 @@ def get_official_eval_result(gt_annos, dt_annos, current_classes, PR_detail_dict
                 ret_dict['%s_image/moderate_R40' % class_to_name[curcls]] = mAPbbox_R40[j, 1, 0]
                 ret_dict['%s_image/hard_R40' % class_to_name[curcls]] = mAPbbox_R40[j, 2, 0]
 
+                result += print_str((f"{class_to_name[curcls]}_3d/easy_R40={mAP3d_R40[j, 0, 0]:.2f}"))
+                result += print_str((f"{class_to_name[curcls]}_3d/moderate_R40={mAP3d_R40[j, 1, 0]:.2f}"))
+                result += print_str((f"{class_to_name[curcls]}_3d/hard_R40={mAP3d_R40[j, 2, 0]:.2f}"))
+                result += print_str((f"{class_to_name[curcls]}_3d/mAP_R40={(mAP3d_R40[j, 0, 0] + mAP3d_R40[j, 1, 0] + mAP3d_R40[j, 2, 0])/3:.2f}"))
+
+                result += print_str((f"{class_to_name[curcls]}_bev/easy_R40={mAPbev_R40[j, 0, 0]:.2f}"))
+                result += print_str((f"{class_to_name[curcls]}_bev/moderate_R40={mAPbev_R40[j, 1, 0]:.2f}"))
+                result += print_str((f"{class_to_name[curcls]}_bev/hard_R40={mAPbev_R40[j, 2, 0]:.2f}"))
+                result += print_str((f"{class_to_name[curcls]}_bev/mAP_R40={(mAPbev_R40[j, 0, 0] + mAPbev_R40[j, 1, 0] + mAPbev_R40[j, 2, 0])/3:.2f}"))
+
+
     return result, ret_dict
 
 
