@@ -1,6 +1,18 @@
 import torch
 import torch.nn as nn
 
+class PillarHistConcat(nn.Module):
+    def __init__(self, model_cfg, grid_size, **kwargs):
+        super().__init__()
+
+        self.model_cfg = model_cfg
+        self.num_bev_features = self.model_cfg.NUM_BEV_FEATURES
+        # self.nx, self.ny, self.nz = grid_size
+
+
+    def forward(self, batch_dict, **kwargs):
+        return batch_dict
+
 
 class PointPillarScatter(nn.Module):
     def __init__(self, model_cfg, grid_size, **kwargs):
