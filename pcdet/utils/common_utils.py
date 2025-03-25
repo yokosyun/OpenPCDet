@@ -83,11 +83,11 @@ def mask_points_by_range(points, limit_range):
     eps = 1e-4
     mask = (
         (points[:, 0] > limit_range[0])
-        & (points[:, 0] < limit_range[3] - eps)
+        & (points[:, 0] < (limit_range[3] - eps))
         & (points[:, 1] > limit_range[1])
-        & (points[:, 1] < limit_range[4] - eps)
+        & (points[:, 1] < (limit_range[4] - eps))
         & (points[:, 2] > limit_range[2])
-        & (points[:, 2] < limit_range[5] - eps)
+        & (points[:, 2] < (limit_range[5] - eps))
     )
     return mask
 
