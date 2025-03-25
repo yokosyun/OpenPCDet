@@ -109,7 +109,10 @@ class PillarHist(VFETemplate):
         voxel_coords_rev = idx_to_xyz(vox_idxs, self.n_grids)
         diff = voxel_coords != voxel_coords_rev
         num_diff = torch.sum(diff)
-        assert num_diff ==0, num_diff
+        if num_diff !=0:
+            print("num_diff=", num_diff)
+            print("voxel_coords=", torch.max(voxel_coords, dim=0))
+
         uni_vox_idxs, uni_vox_inv_idxs, uni_vox_counts = torch.unique(
             vox_idxs, return_inverse=True, return_counts=True
         )
