@@ -74,14 +74,20 @@ def angle2matrix(angle):
 def mask_points_by_range(points, limit_range):
     """
     z filter was not included
+
+    add eps to avoid numerical stability
+    1.9999999999999998//1 = 1.0
+    1.9999999999999999//1 = 2.0
     """
+
+    eps = 1e-4
     mask = (
         (points[:, 0] > limit_range[0])
-        & (points[:, 0] < limit_range[3])
+        & (points[:, 0] < limit_range[3] - eps)
         & (points[:, 1] > limit_range[1])
-        & (points[:, 1] < limit_range[4])
+        & (points[:, 1] < limit_range[4] - eps)
         & (points[:, 2] > limit_range[2])
-        & (points[:, 2] < limit_range[5])
+        & (points[:, 2] < limit_range[5] - eps)
     )
     return mask
 
