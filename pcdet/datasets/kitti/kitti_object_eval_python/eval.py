@@ -736,12 +736,16 @@ def get_official_eval_result(gt_annos, dt_annos, current_classes, PR_detail_dict
                 ret_dict['%s_3d/easy_R40' % class_to_name[curcls]] = mAP3d_R40[j, 0, 0]
                 ret_dict['%s_3d/moderate_R40' % class_to_name[curcls]] = mAP3d_R40[j, 1, 0]
                 ret_dict['%s_3d/hard_R40' % class_to_name[curcls]] = mAP3d_R40[j, 2, 0]
+                ret_dict['%s_3d/mAP_R40' % class_to_name[curcls]] = (mAP3d_R40[j, 0, 0] + mAP3d_R40[j, 1, 0] + mAP3d_R40[j, 2, 0])/3
+
                 ret_dict['%s_bev/easy_R40' % class_to_name[curcls]] = mAPbev_R40[j, 0, 0]
                 ret_dict['%s_bev/moderate_R40' % class_to_name[curcls]] = mAPbev_R40[j, 1, 0]
                 ret_dict['%s_bev/hard_R40' % class_to_name[curcls]] = mAPbev_R40[j, 2, 0]
-                ret_dict['%s_image/easy_R40' % class_to_name[curcls]] = mAPbbox_R40[j, 0, 0]
-                ret_dict['%s_image/moderate_R40' % class_to_name[curcls]] = mAPbbox_R40[j, 1, 0]
-                ret_dict['%s_image/hard_R40' % class_to_name[curcls]] = mAPbbox_R40[j, 2, 0]
+                ret_dict['%s_bev/mAP_R40' % class_to_name[curcls]] = (mAPbev_R40[j, 0, 0] + mAPbev_R40[j, 1, 0] + mAPbev_R40[j, 2, 0])/3
+
+                # ret_dict['%s_image/easy_R40' % class_to_name[curcls]] = mAPbbox_R40[j, 0, 0]
+                # ret_dict['%s_image/moderate_R40' % class_to_name[curcls]] = mAPbbox_R40[j, 1, 0]
+                # ret_dict['%s_image/hard_R40' % class_to_name[curcls]] = mAPbbox_R40[j, 2, 0]
 
                 result += print_str((f"{class_to_name[curcls]}_3d/easy_R40={mAP3d_R40[j, 0, 0]:.2f}"))
                 result += print_str((f"{class_to_name[curcls]}_3d/moderate_R40={mAP3d_R40[j, 1, 0]:.2f}"))
