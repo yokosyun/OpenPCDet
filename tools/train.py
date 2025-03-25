@@ -129,6 +129,16 @@ def main():
         seed=666 if args.fix_random_seed else None
     )
 
+    test_set, test_loader, sampler = build_dataloader(
+        dataset_cfg=cfg.DATA_CONFIG,
+        class_names=cfg.CLASS_NAMES,
+        batch_size=args.batch_size,
+        dist=dist_train,
+        workers=args.workers,
+        logger=logger,
+        training=False
+    )
+
     model = build_network(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES), dataset=train_set)
     if args.sync_bn:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
@@ -179,6 +189,7 @@ def main():
         model,
         optimizer,
         train_loader,
+        test_loader,
         model_func=model_fn_decorator(),
         lr_scheduler=lr_scheduler,
         optim_cfg=cfg.OPTIMIZATION,
@@ -199,7 +210,9 @@ def main():
         use_logger_to_record=not args.use_tqdm_to_record, 
         show_gpu_stat=not args.wo_gpu_stat,
         use_amp=args.use_amp,
-        cfg=cfg
+        cfg=cfg,
+        output_dir=output_dir,
+        args=args,
     )
 
     if hasattr(train_set, 'use_shared_memory') and train_set.use_shared_memory:
