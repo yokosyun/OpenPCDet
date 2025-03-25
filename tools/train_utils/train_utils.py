@@ -147,11 +147,11 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
     return accumulated_iter
 
 
-def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_cfg,
+def train_model(model, optimizer, train_loader, test_loader, model_func, lr_scheduler, optim_cfg,
                 start_epoch, total_epochs, start_iter, rank, tb_log, ckpt_save_dir, train_sampler=None,
                 lr_warmup_scheduler=None, ckpt_save_interval=1, max_ckpt_save_num=50,
                 merge_all_iters_to_one_epoch=False, use_amp=False,
-                use_logger_to_record=False, logger=None, logger_iter_interval=None, ckpt_save_time_interval=None, show_gpu_stat=False, cfg=None):
+                use_logger_to_record=False, logger=None, logger_iter_interval=None, ckpt_save_time_interval=None, show_gpu_stat=False, cfg=None,output_dir=None, args=None):
     accumulated_iter = start_iter
 
     # use for disable data augmentation hook
@@ -185,7 +185,6 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
                 leave_pbar=(cur_epoch + 1 == total_epochs),
                 total_it_each_epoch=total_it_each_epoch,
                 dataloader_iter=dataloader_iter, 
-                
                 cur_epoch=cur_epoch, total_epochs=total_epochs,
                 use_logger_to_record=use_logger_to_record, 
                 logger=logger, logger_iter_interval=logger_iter_interval,
@@ -197,6 +196,33 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
             # save trained model
             trained_epoch = cur_epoch + 1
             if trained_epoch % ckpt_save_interval == 0 and rank == 0:
+                from eval_utils import eval_utils
+
+                cur_result_dir = output_dir / ('epoch_%s' % cur_epoch) / cfg.DATA_CONFIG.DATA_SPLIT['test']
+                tb_dict = eval_utils.eval_one_epoch(
+                    cfg, args, model, test_loader, cur_epoch, logger, dist_test=False,
+                    result_dir=cur_result_dir
+                )
+
+
+                plot_keys = [
+                    "Pedestrian_bev/mAP_R40",
+                    "Pedestrian_3d/mAP_R40",
+                    "Car_bev/mAP_R40",
+                    "Car_3d/mAP_R40",
+                    "Cyclist_bev/mAP_R40",
+                    "Cyclist_3d/mAP_R40",
+                    "recall/rcnn_0.3",
+                    "recall/rcnn_0.5",
+                    "recall/rcnn_0.7",
+
+                ]
+
+                if cfg.LOCAL_RANK == 0:
+                    for key in plot_keys:
+                        tb_log.add_scalar('val/' + key, tb_dict[key], cur_epoch)
+
+
 
                 ckpt_list = glob.glob(str(ckpt_save_dir / 'checkpoint_epoch_*.pth'))
                 ckpt_list.sort(key=os.path.getmtime)
