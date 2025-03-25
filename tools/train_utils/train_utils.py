@@ -27,6 +27,8 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
         forward_time = common_utils.AverageMeter()
         losses_m = common_utils.AverageMeter()
 
+    tb_dict_total = {"loss": 0, "loss_rpn":0, "rpn_loss": 0, "rpn_loss_cls":0, "rpn_loss_dir": 0, "rpn_loss_loc":0}
+
     end = time.time()
     for cur_it in range(start_it, total_it_each_epoch):
         try:
@@ -45,9 +47,6 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
             cur_lr = float(optimizer.lr)
         except:
             cur_lr = optimizer.param_groups[0]['lr']
-
-        if tb_log is not None:
-            tb_log.add_scalar('meta_data/learning_rate', cur_lr, accumulated_iter)
 
         model.train()
         optimizer.zero_grad()
@@ -127,10 +126,11 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
                 # tbar.refresh()
 
             if tb_log is not None:
-                tb_log.add_scalar('train/loss', loss, accumulated_iter)
-                tb_log.add_scalar('meta_data/learning_rate', cur_lr, accumulated_iter)
+                tb_dict_total["loss"] += loss
+
+            
                 for key, val in tb_dict.items():
-                    tb_log.add_scalar('train/' + key, val, accumulated_iter)
+                    tb_dict_total[key] += val
             
             # save intermediate ckpt every {ckpt_save_time_interval} seconds         
             time_past_this_epoch = pbar.format_dict['elapsed']
@@ -141,7 +141,11 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
                 )
                 logger.info(f'Save latest model to {ckpt_name}')
                 ckpt_save_cnt += 1
-                
+    
+    tb_log.add_scalar('meta_data/learning_rate', cur_lr, cur_epoch)
+    for key, val in tb_dict_total.items():
+        tb_log.add_scalar('train/' + key, val / total_it_each_epoch, cur_epoch)
+
     if rank == 0:
         pbar.close()
     return accumulated_iter
