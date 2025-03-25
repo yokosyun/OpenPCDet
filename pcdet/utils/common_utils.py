@@ -109,6 +109,7 @@ def get_voxel_centers(voxel_coords, downsample_times, voxel_size, point_cloud_ra
 
 def create_logger(log_file=None, rank=0, log_level=logging.INFO):
     logger = logging.getLogger(__name__)
+    logging.getLogger("numba.cuda.cudadrv.driver").setLevel(logging.WARNING)
     logger.setLevel(log_level if rank == 0 else "ERROR")
     formatter = logging.Formatter("%(asctime)s  %(levelname)5s  %(message)s")
     console = logging.StreamHandler()
