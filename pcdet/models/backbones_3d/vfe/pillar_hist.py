@@ -158,12 +158,14 @@ class PillarHist(VFETemplate):
         ).scatter_(0, pillar_hist_idxs, ave_intensity)
 
 
-        MAX_PNT_COUNTS = None
+        MAX_PNT_COUNTS = 2
         if MAX_PNT_COUNTS is None:
             vox_counts = uni_vox_counts.float()
         else:
             # vox_counts = 1 # for smaller memory footprint computation?
             vox_counts = torch.clamp(uni_vox_counts, max=MAX_PNT_COUNTS).float()
+            vox_counts /= MAX_PNT_COUNTS
+
         pillar_hist_counts = torch.zeros(len(uni_bev_idxs) * self.n_grids[2], device=pillar_hist_idxs.device).scatter_(0,  pillar_hist_idxs, vox_counts)
         
         pillar_hist = torch.stack(
