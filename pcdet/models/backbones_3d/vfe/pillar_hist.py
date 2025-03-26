@@ -65,7 +65,7 @@ class PillarHist(VFETemplate):
         self.min_range = torch.nn.Parameter(torch.tensor(point_cloud_range[:3]),requires_grad=False)
         self.voxel_size = torch.nn.Parameter(torch.tensor(voxel_size),requires_grad=False)
         n_grids = torch.round((self.point_cloud_range[3:] - self.point_cloud_range[:3]) / self.voxel_size)
-        self.n_grids = n_grids.int()
+        self.n_grids = torch.nn.Parameter(n_grids.int(), requires_grad=False)
         
 
         num_pillar_feat = self.n_grids[2] * 2
@@ -90,15 +90,22 @@ class PillarHist(VFETemplate):
     
     def pillar_mlp(self, x, coords):
         x_lin = x.reshape(x.size(0), -1)
+
         if self.use_xy:
             x_lin = torch.cat([x_lin, coords], dim=1)
         x1 = self.linear1(x_lin)
         x1 = self.bn1(x1)
+
         return x1
     
     def create_hist(self, points):
         pnts_coord = points[:, [0,1,2]] # zyx to xyz
         pnts_intensity = points[:, 3]
+
+        NORMALIZE_INTENSITY = True
+        if NORMALIZE_INTENSITY:
+            pnts_intensity = pnts_intensity * 2.0 - 1.0
+
 
         if False:
             visualize_points(pnts_coord.cpu().numpy(), x_range=[-25,25], y_range=[-10,10], voxel_resolutions=[1.0, 1.0, 1.0], colors = pnts_intensity)
@@ -117,10 +124,17 @@ class PillarHist(VFETemplate):
             vox_idxs, return_inverse=True, return_counts=True
         )
 
-        total_intensity = torch.zeros(
-                len(uni_vox_idxs), device=pnts_intensity.device, dtype=pnts_intensity.dtype
-            ).scatter_add(0, uni_vox_inv_idxs, pnts_intensity)
-        ave_intensity = total_intensity / uni_vox_counts
+        USE_MAX_INTENSITY = False
+        if USE_MAX_INTENSITY:
+            ave_intensity = torch.zeros(
+                len(uni_vox_idxs), device="cuda"
+            ).scatter_reduce_(0, uni_vox_inv_idxs, pnts_intensity, reduce="amax")
+        else:
+            total_intensity = torch.zeros(
+                    len(uni_vox_idxs), device=pnts_intensity.device, dtype=pnts_intensity.dtype
+                ).scatter_add(0, uni_vox_inv_idxs, pnts_intensity)
+            ave_intensity = total_intensity / uni_vox_counts
+
 
         bev_coords = uni_vox_idxs // self.n_grids[2]
         height_coords = uni_vox_idxs % self.n_grids[2]
@@ -135,6 +149,9 @@ class PillarHist(VFETemplate):
         pillar_hist_idxs = self.n_grids[2] * uni_bev_inv_idxs + height_coords
         pillar_hist_idxs = pillar_hist_idxs.long()
 
+        if False:
+            ave_intensity = torch.clamp(ave_intensity, max=1.0)
+
         pillar_hist_intensity = torch.zeros(
             len(uni_bev_idxs) * self.n_grids[2], device=pillar_hist_idxs.device, dtype=ave_intensity.dtype
         ).scatter_(0, pillar_hist_idxs, ave_intensity)
@@ -142,12 +159,10 @@ class PillarHist(VFETemplate):
         if True:
             vox_counts = uni_vox_counts.float()
         else:
-            vox_counts = 1.0
+            # vox_counts = 1 # for smaller memory footprint computation?
+            vox_counts = torch.clamp(uni_vox_counts, max=1).float()
         pillar_hist_counts = torch.zeros(len(uni_bev_idxs) * self.n_grids[2], device=pillar_hist_idxs.device).scatter_(0,  pillar_hist_idxs, vox_counts)
-
-
-
-        bev_coords = idx_to_xy(uni_bev_idxs, self.n_grids[:2])
+        
         pillar_hist = torch.stack(
             [
                 pillar_hist_counts.reshape(-1, self.n_grids[2]),
@@ -156,8 +171,37 @@ class PillarHist(VFETemplate):
             dim=1,
         )
 
+        uni_xy_points = idx_to_xy(uni_bev_idxs, self.n_grids[:2]).float()
+        NORMALIZE_XY_POINTS = True
+        if NORMALIZE_XY_POINTS:
+            uni_xy_points = uni_xy_points / self.n_grids[:2]
+            uni_xy_points = (uni_xy_points  - 0.5) * 2.0
 
-        pillar_feat = self.pillar_mlp(pillar_hist, idx_to_xy(uni_bev_idxs, self.n_grids[:2]))
+        pillar_feat = self.pillar_mlp(pillar_hist, uni_xy_points)
+
+        if False:
+            max_vals = torch.max(pillar_feat, dim=1).values
+            topk = torch.topk(max_vals, 32)
+            indices = topk.indices
+         
+            pillar_feat_vis = pillar_feat[indices, :]
+
+            import numpy as np
+            X, Y = np.meshgrid(np.arange(len(indices)), np.arange(pillar_feat_vis.size(1)))
+            z = np.abs(pillar_feat_vis.cpu().numpy()).flatten()
+            cmap = plt.cm.get_cmap('coolwarm')
+
+            colors = cmap(z / np.max(z))
+
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
+
+            ax.bar3d(X.flatten(), Y.flatten(), np.zeros_like(z), 1, 1, z, color=colors)
+            ax.set_xlabel('BEV Grids')
+            ax.set_ylabel('Input Channel')
+            ax.set_zlabel('Absolute Input Activation Value')
+            # ax.set_title(layer_name)
+            plt.show()
 
         if False:
             valid_idx = torch.nonzero(pillar_hist_counts, as_tuple=False).squeeze(1)
