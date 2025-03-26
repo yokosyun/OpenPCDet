@@ -127,12 +127,12 @@ class PillarHist(VFETemplate):
         USE_MAX_INTENSITY = False
         if USE_MAX_INTENSITY:
             ave_intensity = torch.zeros(
-                len(uni_vox_idxs), device="cuda"
-            ).scatter_reduce_(0, uni_vox_inv_idxs, pnts_intensity, reduce="amax")
+                len(uni_vox_idxs), device=pnts_intensity.device, dtype=pnts_intensity.dtype
+            ).scatter_reduce_(0, uni_vox_inv_idxs, pnts_intensity, reduce="amax", include_self=False)
         else:
             total_intensity = torch.zeros(
-                    len(uni_vox_idxs), device=pnts_intensity.device, dtype=pnts_intensity.dtype
-                ).scatter_add(0, uni_vox_inv_idxs, pnts_intensity)
+                len(uni_vox_idxs), device=pnts_intensity.device, dtype=pnts_intensity.dtype
+            ).scatter_reduce_(0, uni_vox_inv_idxs, pnts_intensity, reduce="sum", include_self=False)
             ave_intensity = total_intensity / uni_vox_counts
 
 
