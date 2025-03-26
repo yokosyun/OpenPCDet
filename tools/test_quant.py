@@ -370,11 +370,29 @@ def main():
                     "num_bits": 8,
                     "axis": None,
                 },
-                "backbone_2d.blocks.0*input_quantizer": {
+
+                "backbone_2d.blocks.0.1.input_quantizer": {
                     "enable": True,
                     "num_bits": 8,
                     "axis": None,
                 },
+                "backbone_2d.blocks.0.4.input_quantizer": {
+                    "enable": True,
+                    "num_bits": 8,
+                    "axis": None,
+                },
+                "backbone_2d.blocks.0.7.input_quantizer": {
+                    "enable": True,
+                    "num_bits": 8,
+                    "axis": None,
+                },
+                "backbone_2d.blocks.0.10.input_quantizer": {
+                    "enable": True,
+                    "num_bits": 8,
+                    "axis": None,
+                },
+
+
                 "backbone_2d.blocks.1*input_quantizer": {
                     "enable": True,
                     "num_bits": 8,
@@ -397,11 +415,6 @@ def main():
                 },
                 "backbone_2d.deblocks.2*input_quantizer": {
                     "enable": True,
-                    "num_bits": 8,
-                    "axis": None,
-                },
-                "backbone_2d.*input_quantizer": {
-                    "enable": False,
                     "num_bits": 8,
                     "axis": None,
                 },
