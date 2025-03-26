@@ -335,8 +335,8 @@ def main():
             dataset_cfg=cfg.DATA_CONFIG,
             class_names=cfg.CLASS_NAMES,
             training=False,
-            # root_path=Path("../data/kitti/calib/velodyne/"),
-            root_path=Path("../data/nuscenes/v1.0-mini/calib/top_lidar/"),
+            root_path=Path("../data/kitti/calib/velodyne/"),
+            # root_path=Path("../data/nuscenes/v1.0-mini/calib/top_lidar/"),
             ext=".bin",
             logger=logger,
         )
