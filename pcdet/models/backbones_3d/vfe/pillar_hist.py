@@ -151,7 +151,7 @@ class PillarHist(VFETemplate):
 
         MAX_INTENSITY = 1.0
         if MAX_INTENSITY != 1.0:
-            ave_intensity = torch.clamp(ave_intensity, min=-MAX_INTENSITY, max=MAX_INTENSITY)
+            ave_intensity = torch.clamp(ave_intensity, max=MAX_INTENSITY)
 
         pillar_hist_intensity = torch.zeros(
             len(uni_bev_idxs) * self.n_grids[2], device=pillar_hist_idxs.device, dtype=ave_intensity.dtype
