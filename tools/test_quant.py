@@ -356,7 +356,7 @@ def main():
                     "axis": 0,
                 },
                 "backbone_2d.*weight_quantizer": {
-                    "enable": False,
+                    "enable": True,
                     "num_bits": 8,
                     "axis": 0,
                 },
@@ -367,6 +367,36 @@ def main():
                 },
                 "vfe.*input_quantizer": {
                     "enable": False,
+                    "num_bits": 8,
+                    "axis": None,
+                },
+                "backbone_2d.blocks.0*input_quantizer": {
+                    "enable": True,
+                    "num_bits": 8,
+                    "axis": None,
+                },
+                "backbone_2d.blocks.1*input_quantizer": {
+                    "enable": True,
+                    "num_bits": 8,
+                    "axis": None,
+                },
+                "backbone_2d.blocks.2*input_quantizer": {
+                    "enable": True,
+                    "num_bits": 8,
+                    "axis": None,
+                },
+                "backbone_2d.deblocks.0*input_quantizer": {
+                    "enable": True,
+                    "num_bits": 8,
+                    "axis": None,
+                },
+                "backbone_2d.deblocks.1*input_quantizer": {
+                    "enable": True,
+                    "num_bits": 8,
+                    "axis": None,
+                },
+                "backbone_2d.deblocks.2*input_quantizer": {
+                    "enable": True,
                     "num_bits": 8,
                     "axis": None,
                 },
