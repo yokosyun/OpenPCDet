@@ -149,18 +149,21 @@ class PillarHist(VFETemplate):
         pillar_hist_idxs = self.n_grids[2] * uni_bev_inv_idxs + height_coords
         pillar_hist_idxs = pillar_hist_idxs.long()
 
-        if False:
-            ave_intensity = torch.clamp(ave_intensity, max=1.0)
+        MAX_INTENSITY = 1.0
+        if MAX_INTENSITY != 1.0:
+            ave_intensity = torch.clamp(ave_intensity, max=MAX_INTENSITY)
 
         pillar_hist_intensity = torch.zeros(
             len(uni_bev_idxs) * self.n_grids[2], device=pillar_hist_idxs.device, dtype=ave_intensity.dtype
         ).scatter_(0, pillar_hist_idxs, ave_intensity)
 
-        if True:
+
+        MAX_PNT_COUNTS = None
+        if MAX_PNT_COUNTS is None:
             vox_counts = uni_vox_counts.float()
         else:
             # vox_counts = 1 # for smaller memory footprint computation?
-            vox_counts = torch.clamp(uni_vox_counts, max=1).float()
+            vox_counts = torch.clamp(uni_vox_counts, max=MAX_PNT_COUNTS).float()
         pillar_hist_counts = torch.zeros(len(uni_bev_idxs) * self.n_grids[2], device=pillar_hist_idxs.device).scatter_(0,  pillar_hist_idxs, vox_counts)
         
         pillar_hist = torch.stack(
@@ -177,6 +180,25 @@ class PillarHist(VFETemplate):
             uni_xy_points = uni_xy_points / self.n_grids[:2]
             uni_xy_points = (uni_xy_points  - 0.5) * 2.0
 
+            NON_LINEAR_XY_POINTS = False
+            if NON_LINEAR_XY_POINTS:
+                transformed_coords = torch.tanh(uni_xy_points[:, :] * 2)
+                transformed_coords = (transformed_coords + 1.0) / 2.0 * self.n_grids[:2]
+                print(torch.max(transformed_coords, dim=0).values, torch.min(transformed_coords, dim=0).values)
+
+                if False:
+                    print(torch.max(uni_xy_points, dim=0).values, torch.min(uni_xy_points, dim=0).values)
+                    print(torch.max(transformed_coords, dim=0).values, torch.min(transformed_coords, dim=0).values)
+                    plt.figure(figsize=(10, 5))
+                    plt.scatter(uni_xy_points[:, 1].cpu(), transformed_coords[:, 1].cpu(), label="Transformed")
+                    plt.title("Logarithmic XY Coordinate Transformation")
+                    plt.xlabel("original Coordinate")
+                    plt.ylabel("compressed Coordinate")
+                    plt.legend()
+                    plt.grid(True)
+                    plt.show()
+
+
         pillar_feat = self.pillar_mlp(pillar_hist, uni_xy_points)
 
         if False:
@@ -188,8 +210,11 @@ class PillarHist(VFETemplate):
 
             import numpy as np
             X, Y = np.meshgrid(np.arange(len(indices)), np.arange(pillar_feat_vis.size(1)))
-            z = np.abs(pillar_feat_vis.cpu().numpy()).flatten()
+        
+            z = pillar_feat_vis.cpu().numpy().flatten()
+            z = np.abs(z)
             cmap = plt.cm.get_cmap('coolwarm')
+
 
             colors = cmap(z / np.max(z))
 
