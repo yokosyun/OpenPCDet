@@ -158,7 +158,7 @@ class PillarHist(VFETemplate):
         ).scatter_(0, pillar_hist_idxs, ave_intensity)
 
 
-        MAX_PNT_COUNTS = 2
+        MAX_PNT_COUNTS = 1
         if MAX_PNT_COUNTS is None:
             vox_counts = uni_vox_counts.float()
         else:
