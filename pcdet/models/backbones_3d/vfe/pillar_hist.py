@@ -102,7 +102,7 @@ class PillarHist(VFETemplate):
         pnts_coord = points[:, [0,1,2]] # zyx to xyz
         pnts_intensity = points[:, 3]
 
-        NORMALIZE_INTENSITY = True
+        NORMALIZE_INTENSITY = False
         if NORMALIZE_INTENSITY:
             pnts_intensity = pnts_intensity * 2.0 - 1.0
 
