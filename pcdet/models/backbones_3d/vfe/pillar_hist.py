@@ -69,7 +69,7 @@ class PillarHist(VFETemplate):
         
 
         num_pillar_feat = self.n_grids[2] * 2
-        self.use_xy = True
+        self.use_xy = False
         if self.use_xy:
             num_pillar_feat += 2
 
