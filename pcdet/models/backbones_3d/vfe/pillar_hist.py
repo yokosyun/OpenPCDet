@@ -218,29 +218,39 @@ class PillarHist(VFETemplate):
 
         if False:
             max_vals = torch.max(pillar_feat, dim=1).values
-            topk = torch.topk(max_vals, 32)
-            indices = topk.indices
-         
-            pillar_feat_vis = pillar_feat[indices, :]
+            topk = torch.topk(max_vals, 3200, largest=True)
+            indices = topk.indices[::100]
 
-            import numpy as np
-            X, Y = np.meshgrid(np.arange(len(indices)), np.arange(pillar_feat_vis.size(1)))
-        
-            z = pillar_feat_vis.cpu().numpy().flatten()
-            z = np.abs(z)
             cmap = plt.cm.get_cmap('coolwarm')
 
+            import numpy as np
 
+            pillar_feat_vis = pillar_feat[indices, :]
+            X, Y = np.meshgrid(np.arange(len(indices)), np.arange(pillar_feat.size(1)))
+            z = pillar_feat_vis.cpu().numpy().flatten()
+            z = np.abs(z)
             colors = cmap(z / np.max(z))
-
-            fig = plt.figure()
-            ax = fig.add_subplot(111, projection='3d')
-
+            fig1 = plt.figure()
+            ax = fig1.add_subplot(111, projection='3d')
             ax.bar3d(X.flatten(), Y.flatten(), np.zeros_like(z), 1, 1, z, color=colors)
-            ax.set_xlabel('BEV Grids')
-            ax.set_ylabel('Input Channel')
+            ax.set_xlabel('Pillars')
+            ax.set_ylabel('Channels')
             ax.set_zlabel('Absolute Input Activation Value')
-            # ax.set_title(layer_name)
+
+
+            pillar_hist_counts = pillar_hist_counts.reshape(-1, self.n_grids[2])
+            pillar_feat_vis = pillar_hist_counts[indices, :]
+            X, Y = np.meshgrid(np.arange(len(indices)), np.arange(pillar_feat_vis.size(1)))
+            pillar_feat_vis = pillar_feat_vis.t()
+            z = pillar_feat_vis.cpu().numpy().flatten()
+            z = np.abs(z)
+            colors = cmap(z / np.max(z))
+            fig2 = plt.figure()
+            ax = fig2.add_subplot(111, projection='3d')
+            ax.bar3d(X.flatten(), Y.flatten(), np.zeros_like(z), 1, 1, z, color=colors)
+            ax.set_xlabel('Pillars')
+            ax.set_ylabel('Height Bins')
+            ax.set_zlabel('Number of Points')
             plt.show()
 
         if False:
