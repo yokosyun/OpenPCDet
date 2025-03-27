@@ -205,7 +205,7 @@ class PillarHist(VFETemplate):
 
         if False:
             max_vals = torch.max(pillar_feat, dim=1).values
-            topk = torch.topk(max_vals, 32, largest=True)
+            topk = torch.topk(max_vals, 32)
             indices = topk.indices
          
             pillar_feat_vis = pillar_feat[indices, :]
