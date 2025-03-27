@@ -67,9 +67,13 @@ class PillarHist(VFETemplate):
         n_grids = torch.round((self.point_cloud_range[3:] - self.point_cloud_range[:3]) / self.voxel_size)
         self.n_grids = torch.nn.Parameter(n_grids.int(), requires_grad=False)
         
+        self.USE_INTENSITY = False
 
-        num_pillar_feat = self.n_grids[2] * 2
-        self.use_xy = True
+        num_pillar_feat = self.n_grids[2]
+        if self.USE_INTENSITY:
+            num_pillar_feat *= 2
+        
+        self.use_xy = False
         if self.use_xy:
             num_pillar_feat += 2
 
@@ -168,13 +172,22 @@ class PillarHist(VFETemplate):
 
         pillar_hist_counts = torch.zeros(len(uni_bev_idxs) * self.n_grids[2], device=pillar_hist_idxs.device).scatter_(0,  pillar_hist_idxs, vox_counts)
         
-        pillar_hist = torch.stack(
-            [
-                pillar_hist_counts.reshape(-1, self.n_grids[2]),
-                pillar_hist_intensity.reshape(-1, self.n_grids[2]),
-            ],
-            dim=1,
-        )
+        if self.USE_INTENSITY:
+            pillar_hist = torch.stack(
+                [
+                    pillar_hist_counts.reshape(-1, self.n_grids[2]),
+                    pillar_hist_intensity.reshape(-1, self.n_grids[2]),
+                ],
+                dim=1,
+            )
+        else:
+            pillar_hist = torch.stack(
+                [
+                    pillar_hist_counts.reshape(-1, self.n_grids[2]),
+                ],
+                dim=1,
+            )
+
 
         uni_xy_points = idx_to_xy(uni_bev_idxs, self.n_grids[:2]).float()
         NORMALIZE_XY_POINTS = True
