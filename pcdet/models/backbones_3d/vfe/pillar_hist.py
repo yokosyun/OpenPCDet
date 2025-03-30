@@ -79,6 +79,7 @@ class PillarHist(VFETemplate):
 
         self.linear1 = torch.nn.Linear(num_pillar_feat, 64)
         self.bn1 = torch.nn.BatchNorm1d(64)
+        self.relu = nn.ReLU()
 
 
         """
@@ -99,6 +100,7 @@ class PillarHist(VFETemplate):
             x_lin = torch.cat([x_lin, coords], dim=1)
         x1 = self.linear1(x_lin)
         x1 = self.bn1(x1)
+        x1 = self.relu(x1)
 
         return x1
     
