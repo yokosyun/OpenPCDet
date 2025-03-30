@@ -50,10 +50,10 @@ class BaseBEVBackbone(nn.Module):
             for k in range(layer_nums[idx]):
                 cur_layers.extend([
                     nn.Conv2d(num_filters[idx], num_filters[idx], kernel_size=3, padding=1, bias=False),
-                    # nn.BatchNorm2d(num_filters[idx], eps=1e-3, momentum=0.01),
                     SparseBatchNorm2d(num_filters[idx], eps=1e-3, momentum=0.01),
                     nn.ReLU6()
                 ])
+
             self.blocks.append(nn.Sequential(*cur_layers))
             if len(upsample_strides) > 0:
                 stride = upsample_strides[idx]
@@ -108,32 +108,51 @@ class BaseBEVBackbone(nn.Module):
             # x = self.blocks[i](x)
             block = self.blocks[i]
             for layer in block:
-                if type(layer).__name__ in ["SparseBatchNorm2d", "BatchNorm2d", "InstanceNorm2d"]:
+                if type(layer).__name__ in ["SparseBatchNorm2d", "BatchNorm2d", "InstanceNorm2d", "QuantBatchNorm2d"]:
                     if self.DEBUG:
                         print(i, "------------", layer)
+                        bev_feat_reshape = x.permute(0, 2, 3, 1)
                         bev_feat_reshape = x.reshape(-1, x.size(1))
                         org_mean = bev_feat_reshape.mean(dim=0)
                         org_var = bev_feat_reshape.var(dim=0)
-                        print(x.shape)
                         print("org_mean", torch.max(org_mean), torch.min(org_mean))
                         print("org_var", torch.max(org_var), torch.min(org_var))
                         print("input=",torch.max(x), torch.min(x))
-                        # visualize_activation_histogram(x, type(layer).__name__ + str(i) + "_input")
+                        visualize_activation_histogram(x, type(layer).__name__ + str(i) + "_input")
                     if type(layer).__name__ == "SparseBatchNorm2d":
+                        # if i == 0:
+                        #     print(i, "------------", layer)
+                        #     bev_feat_reshape = x.permute(0, 2, 3, 1)
+                        #     bev_feat_reshape = x.reshape(-1, x.size(1))
+                        #     org_mean = bev_feat_reshape.mean(dim=0)
+                        #     org_var = bev_feat_reshape.var(dim=0)
+                        #     print("org_mean", torch.max(org_mean), torch.min(org_mean))
+                        #     print("org_var", torch.max(org_var), torch.min(org_var))
+                        #     print("input=",torch.max(x), torch.min(x))
+                        #     visualize_activation_histogram(x, type(layer).__name__ + str(i) + "_input")
                         x = layer(x, masks)
+                        # if i == 0:
+                        #     bev_feat_reshape = x.permute(0, 2, 3, 1)
+                        #     bev_feat_reshape = x.reshape(-1, x.size(1))
+                        #     norm_mean = bev_feat_reshape.mean(dim=0)
+                        #     norm_var = bev_feat_reshape.var(dim=0)
+                        #     print("norm_mean", torch.max(norm_mean), torch.min(norm_mean))
+                        #     print("norm_var", torch.max(norm_var), torch.min(norm_var))
+                        #     print("output=",torch.max(x), torch.min(x))
+                        #     visualize_activation_histogram(x, type(layer).__name__ + str(i) + "_output")
                     else:
                         x = layer(x)
                     if self.DEBUG:
+                        bev_feat_reshape = x.permute(0, 2, 3, 1)
                         bev_feat_reshape = x.reshape(-1, x.size(1))
                         norm_mean = bev_feat_reshape.mean(dim=0)
                         norm_var = bev_feat_reshape.var(dim=0)
                         print("norm_mean", torch.max(norm_mean), torch.min(norm_mean))
                         print("norm_var", torch.max(norm_var), torch.min(norm_var))
                         print("output=",torch.max(x), torch.min(x))
-                        # visualize_activation_histogram(x, type(layer).__name__ + str(i) + "_output")
+                        visualize_activation_histogram(x, type(layer).__name__ + str(i) + "_output")   
                 else:
                     x = layer(x)
-
                 
             stride = int(spatial_features.shape[2] / x.shape[2])
             ret_dict['spatial_features_%dx' % stride] = x
@@ -170,8 +189,10 @@ class SparseBatchNorm2d(nn.Module):
         dtype=None,
     ) -> None:
         super(SparseBatchNorm2d, self).__init__()
-        self.bn = nn.BatchNorm2d(num_features, eps, momentum, affine, track_running_stats = True, device=device, dtype=dtype)
+        # TODO! track_running_stats must set properly
+        self.bn = nn.BatchNorm2d(num_features, eps, momentum, affine, track_running_stats = False, device=device, dtype=dtype)
         self.DEBUG = False
+        
 
     def forward(self, bev_feat: Tensor, masks: Tensor) -> Tensor:
         if self.training:
@@ -184,25 +205,55 @@ class SparseBatchNorm2d(nn.Module):
                 masks = torch.nn.functional.max_pool2d(masks.float(), kernel_size=int(kernel_size_h)).bool()
 
                 mask_expanded = masks.expand(-1, bev_feat.size(1), -1, -1)
+
                 mask_expanded = mask_expanded.permute(0, 2, 3, 1)
                 bev_feat_permute = bev_feat.permute(0, 2, 3, 1)
+
                 valid_feat = bev_feat_permute[mask_expanded]
                 valid_feat = valid_feat.reshape(-1, bev_feat.size(1))
+                
 
-                mean = valid_feat.mean(dim=0)  # [C]
-                variance = valid_feat.var(dim=0) # [C]
+                """
+                <save_var>
+                    save_var_transform_a[f] = VarTransform<accscalar_t>{}(var_sum / n, eps);
+                    https://github.com/pytorch/pytorch/blob/e8a11f175e5b0df248c144102e60c57e16fd2a00/aten/src/ATen/native/Normalization.cpp#L274
 
-                self.bn.running_mean = self.bn.momentum * self.bn.running_mean + (1 - self.bn.momentum) * mean
-                self.bn.running_var = self.bn.momentum * self.bn.running_var + (1 - self.bn.momentum) * variance
+
+                <running_var>
+                    accscalar_t unbiased_var = _var_sum_a[f] / (n - 1);
+                    running_var_a[f] = momentum_ * unbiased_var + (1 - momentum_) * running_var_a[f];
+                    https://github.com/pytorch/pytorch/blob/e8a11f175e5b0df248c144102e60c57e16fd2a00/aten/src/ATen/native/Normalization.cpp#L244
+                """
+                # At train time in the forward pass, the standard-deviation is calculated via the biased estimator, equivalent to torch.var(input, unbiased=False)
+                # https://pytorch.org/docs/stable/generated/torch.nn.BatchNorm2d.html
+                # False being correction=0
+                # https://pytorch.org/docs/stable/generated/torch.var.html
+                if False:
+                    mean = valid_feat.mean(dim=0)  # [C]
+                    variance = valid_feat.var(dim=0, correction=1) # [C])
+                    self.bn.running_mean = (1 - self.bn.momentum) * self.bn.running_mean + self.bn.momentum * mean
+                    self.bn.running_var = (1 - self.bn.momentum) * self.bn.running_var + self.bn.momentum * variance
+                
+                else:
+                    bev_feat_reshape = bev_feat.reshape(-1, bev_feat.size(1))
+                    mean = bev_feat_reshape.mean(dim=0)
+                    variance = bev_feat_reshape.var(dim=0, correction=0)
+                    self.bn.running_mean = mean
+                    self.bn.running_var = variance
+
 
             
             if self.DEBUG:
                 print("mask_mean", torch.max(mean), torch.min(mean))
                 print("mask_variance", torch.max(variance), torch.min(variance))
+                print("running_mean", torch.max(self.bn.running_mean), torch.min(self.bn.running_mean))
+                print("running_var", torch.max(self.bn.running_var), torch.min(self.bn.running_var))
 
-        self.bn.track_running_stats = False
+
+
+        # self.bn.track_running_stats = False
         output = self.bn(bev_feat)
-        self.bn.track_running_stats = True
+        # self.bn.track_running_stats = True
 
         return output
 
