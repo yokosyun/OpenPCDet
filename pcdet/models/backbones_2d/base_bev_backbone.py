@@ -34,13 +34,13 @@ class BaseBEVBackbone(nn.Module):
                     c_in_list[idx], num_filters[idx], kernel_size=3,
                     stride=layer_strides[idx], padding=0, bias=False
                 ),
-                nn.BatchNorm2d(num_filters[idx], eps=1e-3, momentum=0.01),
+                CustomBatchNorm2d(num_filters[idx], eps=1e-3, momentum=0.01),
                 nn.ReLU6()
             ]
             for k in range(layer_nums[idx]):
                 cur_layers.extend([
                     nn.Conv2d(num_filters[idx], num_filters[idx], kernel_size=3, padding=1, bias=False),
-                    nn.BatchNorm2d(num_filters[idx], eps=1e-3, momentum=0.01),
+                    CustomBatchNorm2d(num_filters[idx], eps=1e-3, momentum=0.01),
                     nn.ReLU6()
                 ])
             self.blocks.append(nn.Sequential(*cur_layers))
@@ -349,3 +349,54 @@ class BaseBEVResBackbone(nn.Module):
         data_dict['spatial_features_2d'] = x
 
         return data_dict
+
+class CustomBatchNorm2d(nn.Module):
+    def __init__(self, num_features, eps=1e-5, momentum=0.1, affine=True, track_running_stats=True):
+        super(CustomBatchNorm2d, self).__init__()
+        self.num_features = num_features
+        self.eps = eps
+        self.momentum = momentum
+        self.affine = affine
+
+        assert track_running_stats == True, "track_running_stats=False is not supported"
+
+        self.track_running_stats = track_running_stats
+        if self.affine:
+            self.weight = nn.Parameter(torch.ones(num_features))
+            self.bias = nn.Parameter(torch.zeros(num_features))
+        else:
+            self.register_parameter('weight', None)
+            self.register_parameter('bias', None)
+        if self.track_running_stats:
+            self.register_buffer('running_mean', torch.zeros(num_features))
+            self.register_buffer('running_var', torch.ones(num_features))
+            self.register_buffer('num_batches_tracked', torch.tensor(0, dtype=torch.long))
+        else:
+            self.register_parameter('running_mean', None)
+            self.register_parameter('running_var', None)
+            self.register_parameter('num_batches_tracked', None)
+
+    def forward(self, input):
+        if self.training:
+            mean = input.mean(dim=[0, 2, 3])
+
+            if self.track_running_stats:
+                with torch.no_grad():
+                    unbiased_var = torch.var(input, dim=[0, 2, 3], correction=1)
+                    self.running_mean = (1 - self.momentum) * self.running_mean + self.momentum * mean
+                    self.running_var = (1 - self.momentum) * self.running_var + self.momentum * unbiased_var
+                    self.num_batches_tracked += 1
+
+            biased_var = torch.var(input, dim=[0, 2, 3], correction=0)
+            input_normalized = (input - mean.view(1, self.num_features, 1, 1)) / torch.sqrt(biased_var.view(1, self.num_features, 1, 1) + self.eps)
+
+        else:
+            if self.track_running_stats:
+                input_normalized = (input - self.running_mean.view(1, self.num_features, 1, 1)) / torch.sqrt(self.running_var.view(1, self.num_features, 1, 1) + self.eps)
+            else:
+                raise ValueError("running_stats must be True during inference")
+
+        if self.affine:
+            return input_normalized * self.weight.view(1, self.num_features, 1, 1) + self.bias.view(1, self.num_features, 1, 1)
+        else:
+            return input_normalized
