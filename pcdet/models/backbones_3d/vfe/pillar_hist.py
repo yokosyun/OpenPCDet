@@ -95,7 +95,7 @@ class PillarHist(VFETemplate):
     
     def pillar_mlp(self, x, coords):
         x_lin = x.reshape(x.size(0), -1)
-
+ 
         if self.use_xy:
             x_lin = torch.cat([x_lin, coords], dim=1)
         x1 = self.linear1(x_lin)
@@ -190,7 +190,6 @@ class PillarHist(VFETemplate):
                 dim=1,
             )
 
-
         uni_xy_points = idx_to_xy(uni_bev_idxs, self.n_grids[:2]).float()
         NORMALIZE_XY_POINTS = True
         if NORMALIZE_XY_POINTS:
@@ -220,8 +219,8 @@ class PillarHist(VFETemplate):
 
         if False:
             max_vals = torch.max(pillar_feat, dim=1).values
-            topk = torch.topk(max_vals, 3200, largest=True)
-            indices = topk.indices[::100]
+            topk = torch.topk(max_vals, 32, largest=True)
+            indices = topk.indices[:]
 
             cmap = plt.cm.get_cmap('coolwarm')
 
@@ -229,7 +228,8 @@ class PillarHist(VFETemplate):
 
             pillar_feat_vis = pillar_feat[indices, :]
             X, Y = np.meshgrid(np.arange(len(indices)), np.arange(pillar_feat.size(1)))
-            z = pillar_feat_vis.cpu().numpy().flatten()
+
+            z = pillar_feat_vis.t().cpu().numpy().flatten()
             z = np.abs(z)
             colors = cmap(z / np.max(z))
             fig1 = plt.figure()
@@ -243,8 +243,7 @@ class PillarHist(VFETemplate):
             pillar_hist_counts = pillar_hist_counts.reshape(-1, self.n_grids[2])
             pillar_feat_vis = pillar_hist_counts[indices, :]
             X, Y = np.meshgrid(np.arange(len(indices)), np.arange(pillar_feat_vis.size(1)))
-            pillar_feat_vis = pillar_feat_vis.t()
-            z = pillar_feat_vis.cpu().numpy().flatten()
+            z = pillar_feat_vis.t().cpu().numpy().flatten()
             z = np.abs(z)
             colors = cmap(z / np.max(z))
             fig2 = plt.figure()
@@ -307,25 +306,38 @@ class PillarHist(VFETemplate):
             print("bev_coords=", torch.max(bev_coords, dim=0).values)
 
         canvas[uni_bev_idxs.long(), :] = pillar_feat
-        canvas = canvas.t()
-        canvas = canvas.reshape(pillar_feat.size(1), self.n_grids[0], self.n_grids[1])
-        canvas = canvas.permute(0,2,1)
-        
+        canvas = canvas.reshape(self.n_grids[0], self.n_grids[1], pillar_feat.size(1))
+        canvas = canvas.permute(2,1,0)
 
-        return canvas
+
+        mask = torch.zeros(
+            [self.n_grids[0] * self.n_grids[1]],
+            device=pillar_feat.device,
+            dtype=torch.bool,
+        )
+        mask[uni_bev_idxs.long()] = True
+        mask = mask.reshape(self.n_grids[0], self.n_grids[1])
+        mask = mask.t()
+        mask = mask.unsqueeze(0)
+
+        return canvas, mask
 
 
     def forward(self, batch_dict, **kwargs):
         points = batch_dict["points"]
         batch_spatial_features = []
+        masks = []
         batch_size = points[:, 0].max().int().item() + 1
 
 
         for batch_idx in range(batch_size):
             batch_mask = points[:, 0] == batch_idx
-            batch_spatial_features.append(self.create_hist(points[batch_mask, 1:]))
+            spatial_features, mask = self.create_hist(points[batch_mask, 1:])
+            batch_spatial_features.append(spatial_features)
+            masks.append(mask)
 
         batch_dict['spatial_features'] = torch.stack(batch_spatial_features, 0)
+        batch_dict['masks'] = torch.stack(masks, 0)
 
         return batch_dict
 
