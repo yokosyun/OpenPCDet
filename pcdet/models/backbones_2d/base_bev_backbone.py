@@ -5,11 +5,31 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 def visualize_activation_histogram(bev_feat, title="activation_histogram"):
     channels = bev_feat.size(1)
-    y = bev_feat.permute(1,0,2,3).reshape(channels, -1)
+    # y = bev_feat.permute(1,0,2,3).reshape(channels, -1)
+    # plt.title(title)
+    # for i in range(channels):
+    #     plt.hist(y[i].cpu().detach().numpy(), bins=128, label=str(i))
+    #     plt.ylim(0, 1000)
+    # plt.show()
+    y = bev_feat.permute(1, 0, 2, 3).reshape(channels, -1).cpu().detach().numpy()
+
+    plt.figure(figsize=(10, 6))  # Adjust figure size as needed
     plt.title(title)
+    plt.xlabel("Activation Values")
+    plt.ylabel("Frequency")
+
+    # Determine the range of values for consistent binning across channels
+    min_val = np.min(y)
+    max_val = np.max(y)
+    bins = np.linspace(min_val, max_val, 128)
+
+    # Plot histograms as lines for each channel
     for i in range(channels):
-        plt.hist(y[i].cpu().detach().numpy(), bins=128, label=str(i))
-        plt.ylim(0, 1000)
+        hist, _ = np.histogram(y[i], bins=bins)
+        bin_centers = (bins[:-1] + bins[1:]) / 2  # Calculate bin centers
+        plt.plot(bin_centers, hist, label=f"Channel {i}")
+
+    # plt.legend()  # Show legend with channel labels
     plt.show()
 
 class BaseBEVBackbone(nn.Module):
@@ -37,6 +57,10 @@ class BaseBEVBackbone(nn.Module):
         self.blocks = nn.ModuleList()
         self.deblocks = nn.ModuleList()
         for idx in range(num_levels):
+            if idx == 0:
+                Norm = SparseBatchNorm2d
+            else:
+                Norm = nn.BatchNorm2d
             cur_layers = [
                 nn.ZeroPad2d(1),
                 nn.Conv2d(
@@ -44,13 +68,14 @@ class BaseBEVBackbone(nn.Module):
                     stride=layer_strides[idx], padding=0, bias=False
                 ),
                 # nn.BatchNorm2d(num_filters[idx], eps=1e-3, momentum=0.01),
-                SparseBatchNorm2d(num_filters[idx], eps=1e-3, momentum=0.01),
+                Norm(num_filters[idx], eps=1e-3, momentum=0.01),
                 nn.ReLU6()
             ]
             for k in range(layer_nums[idx]):
                 cur_layers.extend([
                     nn.Conv2d(num_filters[idx], num_filters[idx], kernel_size=3, padding=1, bias=False),
-                    SparseBatchNorm2d(num_filters[idx], eps=1e-3, momentum=0.01),
+                    # nn.BatchNorm2d(num_filters[idx], eps=1e-3, momentum=0.01),
+                    Norm(num_filters[idx], eps=1e-3, momentum=0.01),
                     nn.ReLU6()
                 ])
 
@@ -172,90 +197,6 @@ class BaseBEVBackbone(nn.Module):
         data_dict['spatial_features_2d'] = x
 
         return data_dict
-
-from typing import Optional
-from torch import Tensor
-from torch.nn import functional as F 
-
-class SparseBatchNorm2d(nn.Module):
-    def __init__(
-        self,
-        num_features: int,
-        eps: float = 1e-5,
-        momentum: Optional[float] = 0.1,
-        affine: bool = True,
-        track_running_stats: bool = True,
-        device=None,
-        dtype=None,
-    ) -> None:
-        super(SparseBatchNorm2d, self).__init__()
-        # TODO! track_running_stats must set properly
-        self.bn = nn.BatchNorm2d(num_features, eps, momentum, affine, track_running_stats = False, device=device, dtype=dtype)
-        self.DEBUG = False
-        
-
-    def forward(self, bev_feat: Tensor, masks: Tensor) -> Tensor:
-        if self.training:
-            with torch.no_grad():
-                kernel_size_h = masks.size(2) / bev_feat.size(2)
-                kernel_size_w = masks.size(3) / bev_feat.size(3)
-
-                assert kernel_size_h % 2 == 0, "not supported right now"
-
-                masks = torch.nn.functional.max_pool2d(masks.float(), kernel_size=int(kernel_size_h)).bool()
-
-                mask_expanded = masks.expand(-1, bev_feat.size(1), -1, -1)
-
-                mask_expanded = mask_expanded.permute(0, 2, 3, 1)
-                bev_feat_permute = bev_feat.permute(0, 2, 3, 1)
-
-                valid_feat = bev_feat_permute[mask_expanded]
-                valid_feat = valid_feat.reshape(-1, bev_feat.size(1))
-                
-
-                """
-                <save_var>
-                    save_var_transform_a[f] = VarTransform<accscalar_t>{}(var_sum / n, eps);
-                    https://github.com/pytorch/pytorch/blob/e8a11f175e5b0df248c144102e60c57e16fd2a00/aten/src/ATen/native/Normalization.cpp#L274
-
-
-                <running_var>
-                    accscalar_t unbiased_var = _var_sum_a[f] / (n - 1);
-                    running_var_a[f] = momentum_ * unbiased_var + (1 - momentum_) * running_var_a[f];
-                    https://github.com/pytorch/pytorch/blob/e8a11f175e5b0df248c144102e60c57e16fd2a00/aten/src/ATen/native/Normalization.cpp#L244
-                """
-                # At train time in the forward pass, the standard-deviation is calculated via the biased estimator, equivalent to torch.var(input, unbiased=False)
-                # https://pytorch.org/docs/stable/generated/torch.nn.BatchNorm2d.html
-                # False being correction=0
-                # https://pytorch.org/docs/stable/generated/torch.var.html
-                if False:
-                    mean = valid_feat.mean(dim=0)  # [C]
-                    variance = valid_feat.var(dim=0, correction=1) # [C])
-                    self.bn.running_mean = (1 - self.bn.momentum) * self.bn.running_mean + self.bn.momentum * mean
-                    self.bn.running_var = (1 - self.bn.momentum) * self.bn.running_var + self.bn.momentum * variance
-                
-                else:
-                    bev_feat_reshape = bev_feat.reshape(-1, bev_feat.size(1))
-                    mean = bev_feat_reshape.mean(dim=0)
-                    variance = bev_feat_reshape.var(dim=0, correction=0)
-                    self.bn.running_mean = mean
-                    self.bn.running_var = variance
-
-
-            
-            if self.DEBUG:
-                print("mask_mean", torch.max(mean), torch.min(mean))
-                print("mask_variance", torch.max(variance), torch.min(variance))
-                print("running_mean", torch.max(self.bn.running_mean), torch.min(self.bn.running_mean))
-                print("running_var", torch.max(self.bn.running_var), torch.min(self.bn.running_var))
-
-
-
-        # self.bn.track_running_stats = False
-        output = self.bn(bev_feat)
-        # self.bn.track_running_stats = True
-
-        return output
 
 class BaseBEVBackboneV1(nn.Module):
     def __init__(self, model_cfg, **kwargs):
@@ -494,3 +435,71 @@ class BaseBEVResBackbone(nn.Module):
         data_dict['spatial_features_2d'] = x
 
         return data_dict
+
+class SparseBatchNorm2d(nn.Module):
+    def __init__(self, num_features, eps=1e-5, momentum=0.1, affine=True, track_running_stats=True):
+        super(SparseBatchNorm2d, self).__init__()
+        self.num_features = num_features
+        self.eps = eps
+        self.momentum = momentum
+        self.affine = affine
+
+        assert track_running_stats == True, "track_running_stats=False is not supported"
+
+        self.track_running_stats = track_running_stats
+        if self.affine:
+            self.weight = nn.Parameter(torch.ones(num_features))
+            self.bias = nn.Parameter(torch.zeros(num_features))
+        else:
+            self.register_parameter('weight', None)
+            self.register_parameter('bias', None)
+        if self.track_running_stats:
+            self.register_buffer('running_mean', torch.zeros(num_features))
+            self.register_buffer('running_var', torch.ones(num_features))
+            self.register_buffer('num_batches_tracked', torch.tensor(0, dtype=torch.long))
+        else:
+            self.register_parameter('running_mean', None)
+            self.register_parameter('running_var', None)
+            self.register_parameter('num_batches_tracked', None)
+
+    def forward(self, feat, masks):
+        if self.training:
+            kernel_size_h = masks.size(2) / feat.size(2)
+            kernel_size_w = masks.size(3) / feat.size(3)
+
+            mean = feat.mean(dim=[0, 2, 3])
+
+            assert kernel_size_h % 2 == 0, "kernel_size_h="+str(kernel_size_h)+"is not supported right now"
+            assert kernel_size_w % 2 == 0, "kernel_size_w"+str(kernel_size_w)+"is not supported right now"
+
+            masks = torch.nn.functional.max_pool2d(masks.float(), kernel_size=(int(kernel_size_h),int(kernel_size_w))).bool()
+
+            mask_expanded = masks.expand(-1, feat.size(1), -1, -1)
+
+            mask_expanded = mask_expanded.permute(0, 2, 3, 1)
+            feat_permute = feat.permute(0, 2, 3, 1)
+
+            valid_feat = feat_permute[mask_expanded]
+            valid_feat = valid_feat.reshape(-1, feat.size(1))
+
+            if self.track_running_stats:
+                with torch.no_grad():                    
+                    unbiased_var = torch.var(valid_feat, dim=[0], correction=1)
+                    self.running_mean = (1 - self.momentum) * self.running_mean + self.momentum * mean
+                    self.running_var = (1 - self.momentum) * self.running_var + self.momentum * unbiased_var
+                    self.num_batches_tracked += 1
+
+            biased_var = torch.var(valid_feat, dim=[0], correction=0)
+            feat_normalized = (feat - mean.view(1, self.num_features, 1, 1)) / torch.sqrt(biased_var.view(1, self.num_features, 1, 1) + self.eps)
+
+        else:
+            if self.track_running_stats:
+                feat_normalized = (feat - self.running_mean.view(1, self.num_features, 1, 1)) / torch.sqrt(self.running_var.view(1, self.num_features, 1, 1) + self.eps)
+            else:
+                raise ValueError("running_stats must be True during inference")
+
+        if self.affine:
+            return feat_normalized * self.weight.view(1, self.num_features, 1, 1) + self.bias.view(1, self.num_features, 1, 1)
+        else:
+            return feat_normalized
+
