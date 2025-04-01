@@ -5,12 +5,7 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 def visualize_activation_histogram(bev_feat, title="activation_histogram"):
     channels = bev_feat.size(1)
-    # y = bev_feat.permute(1,0,2,3).reshape(channels, -1)
-    # plt.title(title)
-    # for i in range(channels):
-    #     plt.hist(y[i].cpu().detach().numpy(), bins=128, label=str(i))
-    #     plt.ylim(0, 1000)
-    # plt.show()
+
     y = bev_feat.permute(1, 0, 2, 3).reshape(channels, -1).cpu().detach().numpy()
 
     plt.figure(figsize=(10, 6))  # Adjust figure size as needed
@@ -18,18 +13,26 @@ def visualize_activation_histogram(bev_feat, title="activation_histogram"):
     plt.xlabel("Activation Values")
     plt.ylabel("Frequency")
 
-    # Determine the range of values for consistent binning across channels
     min_val = np.min(y)
     max_val = np.max(y)
     bins = np.linspace(min_val, max_val, 128)
 
-    # Plot histograms as lines for each channel
+    plt.ylim(0, 1000)
+
+    
+
     for i in range(channels):
         hist, _ = np.histogram(y[i], bins=bins)
         bin_centers = (bins[:-1] + bins[1:]) / 2  # Calculate bin centers
-        plt.plot(bin_centers, hist, label=f"Channel {i}")
+        line_color = plt.plot(bin_centers, hist, label=f"Channel {i}")[0].get_color()
 
-    # plt.legend()  # Show legend with channel labels
+        channel_min = np.min(y[i])
+        channel_max = np.max(y[i])
+
+
+        # plt.axvline(channel_min, color=line_color, linestyle='--', linewidth=0.8)
+        plt.axvline(channel_max, color=line_color, linestyle='--', linewidth=0.8)
+
     plt.show()
 
 class BaseBEVBackbone(nn.Module):
@@ -61,6 +64,7 @@ class BaseBEVBackbone(nn.Module):
                 Norm = SparseBatchNorm2d
             else:
                 Norm = nn.BatchNorm2d
+                # Norm = nn.InstanceNorm2d
             cur_layers = [
                 nn.ZeroPad2d(1),
                 nn.Conv2d(
@@ -133,7 +137,8 @@ class BaseBEVBackbone(nn.Module):
             # x = self.blocks[i](x)
             block = self.blocks[i]
             for layer in block:
-                if type(layer).__name__ in ["SparseBatchNorm2d", "BatchNorm2d", "InstanceNorm2d", "QuantBatchNorm2d"]:
+                # print(layer)
+                if type(layer).__name__ in ["SparseBatchNorm2d", "BatchNorm2d", "InstanceNorm2d", "QuantBatchNorm2d", "ReLU6"]:
                     if self.DEBUG:
                         print(i, "------------", layer)
                         bev_feat_reshape = x.permute(0, 2, 3, 1)
@@ -165,6 +170,14 @@ class BaseBEVBackbone(nn.Module):
                         #     print("norm_var", torch.max(norm_var), torch.min(norm_var))
                         #     print("output=",torch.max(x), torch.min(x))
                         #     visualize_activation_histogram(x, type(layer).__name__ + str(i) + "_output")
+                    # elif type(layer).__name__ == "QuantBatchNorm2d" and i == 0:
+                    #     # print(layer)
+                    #     # print(layer.bias)
+                    #     # print(layer.running_mean)
+                    #     layer.bias *= 0
+                    #     layer.running_mean *= 0
+                    #     # exit()
+                    #     x = layer(x)
                     else:
                         x = layer(x)
                     if self.DEBUG:
