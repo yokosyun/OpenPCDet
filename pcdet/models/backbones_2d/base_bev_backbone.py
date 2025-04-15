@@ -3,10 +3,10 @@ import torch
 import torch.nn as nn
 
 import matplotlib.pyplot as plt
-def visualize_activation_histogram(bev_feat, title="activation_histogram"):
-    channels = bev_feat.size(1)
+def visualize_activation_histogram(feat, masks, title="activation_histogram"):
+    channels = feat.size(1)
 
-    y = bev_feat.permute(1, 0, 2, 3).reshape(channels, -1).cpu().detach().numpy()
+    y = feat.permute(1, 0, 2, 3).reshape(channels, -1).cpu().detach().numpy()
 
     plt.figure(figsize=(10, 6))  # Adjust figure size as needed
     plt.title(title)
@@ -16,22 +16,51 @@ def visualize_activation_histogram(bev_feat, title="activation_histogram"):
     min_val = np.min(y)
     max_val = np.max(y)
     bins = np.linspace(min_val, max_val, 128)
+    # plt.ylim(0, 1000)
 
-    plt.ylim(0, 1000)
+    kernel_size_h = masks.size(2) / feat.size(2)
+    kernel_size_w = masks.size(3) / feat.size(3)
 
-    
+    kernel_size_h = round(kernel_size_h)
+    kernel_size_w = round(kernel_size_w)
+
+    mean = feat.mean(dim=[0, 2, 3])
+
+    if kernel_size_h != 1:
+        assert kernel_size_h % 2 == 0, "kernel_size_h="+str(kernel_size_h)+"is not supported right now"
+        assert kernel_size_w % 2 == 0, "kernel_size_w="+str(kernel_size_w)+"is not supported right now"
+        masks = torch.nn.functional.max_pool2d(masks.float(), kernel_size=(int(kernel_size_h),int(kernel_size_w))).bool()
+
+
+    mask_expanded = masks.expand(-1, feat.size(1), -1, -1)
+
+    mask_expanded = mask_expanded.permute(0, 2, 3, 1)
+    feat_permute = feat.permute(0, 2, 3, 1)
+
+    valid_feat = feat_permute[mask_expanded]
+    valid_feat = valid_feat.reshape(-1, feat.size(1))
 
     for i in range(channels):
+        mask = np.abs(y[i]) < 1e-4
+        num_zeros = np.sum(mask)
+        filterd_y = y[i][~mask]
         hist, _ = np.histogram(y[i], bins=bins)
         bin_centers = (bins[:-1] + bins[1:]) / 2  # Calculate bin centers
         line_color = plt.plot(bin_centers, hist, label=f"Channel {i}")[0].get_color()
 
-        channel_min = np.min(y[i])
-        channel_max = np.max(y[i])
+        channel_max = np.max(filterd_y)
 
 
-        # plt.axvline(channel_min, color=line_color, linestyle='--', linewidth=0.8)
+        q99 = np.percentile(valid_feat[i].cpu().detach(), 99.0, axis=0)
+        q1 = np.percentile(valid_feat[i].cpu().detach(), 1.0, axis=0)
+
+
+        plt.axvline(q1, color=line_color, linestyle='-', linewidth=0.8)
+        plt.axvline(q99, color=line_color, linestyle='-', linewidth=0.8)
         plt.axvline(channel_max, color=line_color, linestyle='--', linewidth=0.8)
+
+        median = np.median(y[i], axis=0)
+        plt.axvline(median, color=line_color, linestyle='-', linewidth=0.8)
 
     plt.show()
 
@@ -60,25 +89,23 @@ class BaseBEVBackbone(nn.Module):
         self.blocks = nn.ModuleList()
         self.deblocks = nn.ModuleList()
         for idx in range(num_levels):
-            if idx == 0:
-                Norm = SparseBatchNorm2d
-            else:
-                Norm = nn.BatchNorm2d
-                # Norm = nn.InstanceNorm2d
+            # if idx == 0:
+            #     Norm = SparseBatchNorm2d
+            # else:
+            #     Norm = nn.BatchNorm2d
+            Norm = nn.BatchNorm2d
             cur_layers = [
                 nn.ZeroPad2d(1),
                 nn.Conv2d(
                     c_in_list[idx], num_filters[idx], kernel_size=3,
                     stride=layer_strides[idx], padding=0, bias=False
                 ),
-                # nn.BatchNorm2d(num_filters[idx], eps=1e-3, momentum=0.01),
                 Norm(num_filters[idx], eps=1e-3, momentum=0.01),
                 nn.ReLU6()
             ]
             for k in range(layer_nums[idx]):
                 cur_layers.extend([
                     nn.Conv2d(num_filters[idx], num_filters[idx], kernel_size=3, padding=1, bias=False),
-                    # nn.BatchNorm2d(num_filters[idx], eps=1e-3, momentum=0.01),
                     Norm(num_filters[idx], eps=1e-3, momentum=0.01),
                     nn.ReLU6()
                 ])
@@ -137,8 +164,7 @@ class BaseBEVBackbone(nn.Module):
             # x = self.blocks[i](x)
             block = self.blocks[i]
             for layer in block:
-                # print(layer)
-                if type(layer).__name__ in ["SparseBatchNorm2d", "BatchNorm2d", "InstanceNorm2d", "QuantBatchNorm2d", "ReLU6"]:
+                if type(layer).__name__ in ["SparseBatchNorm2d", "BatchNorm2d", "InstanceNorm2d", "QuantBatchNorm2d", "ReLU6", "QuantConv2d"]:
                     if self.DEBUG:
                         print(i, "------------", layer)
                         bev_feat_reshape = x.permute(0, 2, 3, 1)
@@ -148,7 +174,8 @@ class BaseBEVBackbone(nn.Module):
                         print("org_mean", torch.max(org_mean), torch.min(org_mean))
                         print("org_var", torch.max(org_var), torch.min(org_var))
                         print("input=",torch.max(x), torch.min(x))
-                        visualize_activation_histogram(x, type(layer).__name__ + str(i) + "_input")
+                        if i ==0:
+                            visualize_activation_histogram(x, masks, type(layer).__name__ + str(i) + "_input")
                     if type(layer).__name__ == "SparseBatchNorm2d":
                         # if i == 0:
                         #     print(i, "------------", layer)
@@ -188,7 +215,8 @@ class BaseBEVBackbone(nn.Module):
                         print("norm_mean", torch.max(norm_mean), torch.min(norm_mean))
                         print("norm_var", torch.max(norm_var), torch.min(norm_var))
                         print("output=",torch.max(x), torch.min(x))
-                        visualize_activation_histogram(x, type(layer).__name__ + str(i) + "_output")   
+                        if i == 0:
+                            visualize_activation_histogram(x, masks, type(layer).__name__ + str(i) + "_output")   
                 else:
                     x = layer(x)
                 
@@ -374,7 +402,7 @@ class BaseBEVResBackbone(nn.Module):
         self.deblocks = nn.ModuleList()
         for idx in range(num_levels):
             cur_layers = [
-                # nn.ZeroPad2d(1),
+                nn.ZeroPad2d(1),
                 BasicBlock(c_in_list[idx], num_filters[idx], layer_strides[idx], 1, True)
             ]
             for k in range(layer_nums[idx]):
@@ -459,10 +487,13 @@ class SparseBatchNorm2d(nn.Module):
 
         assert track_running_stats == True, "track_running_stats=False is not supported"
 
+        self.USE_BIAS = True
+
         self.track_running_stats = track_running_stats
         if self.affine:
             self.weight = nn.Parameter(torch.ones(num_features))
-            self.bias = nn.Parameter(torch.zeros(num_features))
+            if self.USE_BIAS:
+                self.bias = nn.Parameter(torch.zeros(num_features))
         else:
             self.register_parameter('weight', None)
             self.register_parameter('bias', None)
@@ -475,12 +506,21 @@ class SparseBatchNorm2d(nn.Module):
             self.register_parameter('running_var', None)
             self.register_parameter('num_batches_tracked', None)
 
+        self.USE_MEAN = True
+
     def forward(self, feat, masks):
         if self.training:
             kernel_size_h = masks.size(2) / feat.size(2)
             kernel_size_w = masks.size(3) / feat.size(3)
 
-            mean = feat.mean(dim=[0, 2, 3])
+
+            feat_permute = feat.permute(0, 2, 3, 1)
+
+            if self.USE_MEAN:
+                # mean = feat.mean(dim=[0, 2, 3])
+                mean = torch.median(feat_permute.reshape(-1, feat.size(1)), dim=0).values
+
+
 
             assert kernel_size_h % 2 == 0, "kernel_size_h="+str(kernel_size_h)+"is not supported right now"
             assert kernel_size_w % 2 == 0, "kernel_size_w"+str(kernel_size_w)+"is not supported right now"
@@ -498,21 +538,38 @@ class SparseBatchNorm2d(nn.Module):
             if self.track_running_stats:
                 with torch.no_grad():                    
                     unbiased_var = torch.var(valid_feat, dim=[0], correction=1)
-                    self.running_mean = (1 - self.momentum) * self.running_mean + self.momentum * mean
+                    if self.USE_MEAN:
+                        self.running_mean = (1 - self.momentum) * self.running_mean + self.momentum * mean
                     self.running_var = (1 - self.momentum) * self.running_var + self.momentum * unbiased_var
                     self.num_batches_tracked += 1
 
             biased_var = torch.var(valid_feat, dim=[0], correction=0)
-            feat_normalized = (feat - mean.view(1, self.num_features, 1, 1)) / torch.sqrt(biased_var.view(1, self.num_features, 1, 1) + self.eps)
+            q75 = torch.quantile(valid_feat.float(), 0.90, dim=0)
+            q25 = torch.quantile(valid_feat.float(), 0.10, dim=0)
+            biased_var = q75 - q25
+            
+            print(torch.max(biased_var), torch.min(biased_var))
+            # print(torch.max(biased_var_quant), torch.min(biased_var_quant))
+            if self.USE_MEAN:
+                feat_normalized = (feat - mean.view(1, self.num_features, 1, 1)) / torch.sqrt(biased_var.view(1, self.num_features, 1, 1) + self.eps)
+            else:
+                feat_normalized = feat / torch.sqrt(biased_var.view(1, self.num_features, 1, 1) + self.eps)
 
         else:
             if self.track_running_stats:
-                feat_normalized = (feat - self.running_mean.view(1, self.num_features, 1, 1)) / torch.sqrt(self.running_var.view(1, self.num_features, 1, 1) + self.eps)
+                if self.USE_MEAN:
+                    feat_normalized = (feat - self.running_mean.view(1, self.num_features, 1, 1)) / torch.sqrt(self.running_var.view(1, self.num_features, 1, 1) + self.eps)
+                else:
+                    feat_normalized = feat / torch.sqrt(self.running_var.view(1, self.num_features, 1, 1) + self.eps)
+
             else:
                 raise ValueError("running_stats must be True during inference")
 
         if self.affine:
-            return feat_normalized * self.weight.view(1, self.num_features, 1, 1) + self.bias.view(1, self.num_features, 1, 1)
+            if self.USE_BIAS:
+                return feat_normalized * self.weight.view(1, self.num_features, 1, 1) + self.bias.view(1, self.num_features, 1, 1)
+            else:
+                return feat_normalized * self.weight.view(1, self.num_features, 1, 1)
         else:
             return feat_normalized
 
