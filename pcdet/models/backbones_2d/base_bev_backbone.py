@@ -95,10 +95,9 @@ class BaseBEVBackbone(nn.Module):
             #     Norm = nn.BatchNorm2d
             Norm = nn.BatchNorm2d
             cur_layers = [
-                nn.ZeroPad2d(1),
                 nn.Conv2d(
                     c_in_list[idx], num_filters[idx], kernel_size=3,
-                    stride=layer_strides[idx], padding=0, bias=False
+                    stride=layer_strides[idx], padding=1, bias=False
                 ),
                 Norm(num_filters[idx], eps=1e-3, momentum=0.01),
                 nn.ReLU6()
@@ -257,10 +256,9 @@ class BaseBEVBackboneV1(nn.Module):
         self.deblocks = nn.ModuleList()
         for idx in range(num_levels):
             cur_layers = [
-                nn.ZeroPad2d(1),
                 nn.Conv2d(
                     num_filters[idx], num_filters[idx], kernel_size=3,
-                    stride=1, padding=0, bias=False
+                    stride=1, padding=1, bias=False
                 ),
                 nn.BatchNorm2d(num_filters[idx], eps=1e-3, momentum=0.01),
                 nn.ReLU()
